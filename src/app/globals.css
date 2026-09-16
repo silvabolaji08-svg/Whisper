@@ -1,26 +1,346 @@
 @import "tailwindcss";
 
+/* Manual theme override (set by the toggle) layered on top of the OS preference. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---------------------------------------------------------------------------
+   Semantic tokens. Components reference these only — never a raw hex — so the
+   two themes below are the single place colour is decided.
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f6f8fc;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-muted: #f1f5fd;
+  --surface-hover: #e8effb;
+
+  --fg: #0f172a;
+  --fg-muted: #475569;
+  --fg-subtle: #64748b;
+
+  --border: #e2e8f5;
+  --border-strong: #cbd5e6;
+
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --on-primary: #ffffff;
+  --primary-soft: #e8efff;
+
+  --online: #059669;
+  --away: #d97706;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --on-danger: #ffffff;
+
+  --ring: #2563eb;
+
+  /* Own-message bubble reads as a solid brand block in both themes. */
+  --bubble-own: linear-gradient(135deg, #2563eb, #4f46e5);
+  --bubble-own-fg: #ffffff;
+  --bubble-peer: #ffffff;
+  --bubble-peer-fg: #0f172a;
+
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 16px -4px rgb(15 23 42 / 0.10);
+  --shadow-lg: 0 12px 32px -8px rgb(15 23 42 / 0.18);
+
+  --radius: 0.875rem;
+
+  /* Shared motion tokens: short for feedback, medium for entrances. */
+  --dur-fast: 150ms;
+  --dur-med: 240ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* OS-level dark, unless the user explicitly forced light. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #0a0f1c;
+    --bg-elevated: #111827;
+    --surface: #131c2e;
+    --surface-muted: #1a2438;
+    --surface-hover: #223049;
+
+    --fg: #f1f5f9;
+    --fg-muted: #b6c2d4;
+    --fg-subtle: #93a2b8;
+
+    --border: #24304a;
+    --border-strong: #35435f;
+
+    --primary: #4f8cff;
+    --primary-hover: #6ba1ff;
+    --on-primary: #06132b;
+    --primary-soft: #16233c;
+
+    --online: #34d399;
+    --away: #fbbf24;
+    --danger: #f87171;
+    --danger-soft: #2a1618;
+    --on-danger: #1a0a0b;
+
+    --ring: #6ba1ff;
+
+    --bubble-own: linear-gradient(135deg, #3b74e8, #5b52e0);
+    --bubble-own-fg: #ffffff;
+    --bubble-peer: #1a2438;
+    --bubble-peer-fg: #eef2f8;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Explicit dark, regardless of OS preference. */
+:root[data-theme="dark"] {
+  --bg: #0a0f1c;
+  --bg-elevated: #111827;
+  --surface: #131c2e;
+  --surface-muted: #1a2438;
+  --surface-hover: #223049;
+
+  --fg: #f1f5f9;
+  --fg-muted: #b6c2d4;
+  --fg-subtle: #93a2b8;
+
+  --border: #24304a;
+  --border-strong: #35435f;
+
+  --primary: #4f8cff;
+  --primary-hover: #6ba1ff;
+  --on-primary: #06132b;
+  --primary-soft: #16233c;
+
+  --online: #34d399;
+  --away: #fbbf24;
+  --danger: #f87171;
+  --danger-soft: #2a1618;
+  --on-danger: #1a0a0b;
+
+  --ring: #6ba1ff;
+
+  --bubble-own: linear-gradient(135deg, #3b74e8, #5b52e0);
+  --bubble-own-fg: #ffffff;
+  --bubble-peer: #1a2438;
+  --bubble-peer-fg: #eef2f8;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+}
+
+/* Expose the tokens to Tailwind as utilities (bg-surface, text-fg-muted, …). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-border-default: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-primary-soft: var(--primary-soft);
+
+  --color-online: var(--online);
+  --color-away: var(--away);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-open-sans), system-ui, sans-serif;
+  --font-display: var(--font-poppins), var(--font-open-sans), system-ui, sans-serif;
+
+  --radius-token: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+      color-scheme: dark;
+    }
+  }
+
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-open-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-poppins), var(--font-open-sans), system-ui, sans-serif;
+    letter-spacing: -0.015em;
+  }
+
+  /* Keyboard focus stays visible everywhere; pointer clicks stay clean. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 0.375rem;
+  }
+}
+
+@layer utilities {
+  /* The brand gradient always pairs with its own foreground. Keeping the two
+     together stops `--on-primary` (which is tuned for the flat `--primary`,
+     and is near-black in dark mode) from landing on the gradient. */
+  .surface-brand {
+    background: var(--bubble-own);
+    color: var(--bubble-own-fg);
+  }
+
+  /* Slim scrollbar that follows the theme instead of the OS default. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 9999px;
+  }
+
+  .animate-message-in {
+    animation: message-in var(--dur-med) var(--ease) both;
+  }
+
+  /* Theme-toggle icon swap. Driven by the same cascade as the colour tokens
+     (OS preference + explicit override) rather than Tailwind's `dark:`
+     variant, which only sees the explicit attribute. */
+  .theme-icon {
+    position: absolute;
+    inset: 0;
+    transition:
+      opacity var(--dur-med) var(--ease),
+      transform var(--dur-med) var(--ease);
+  }
+  .theme-icon-light {
+    opacity: 1;
+    transform: none;
+  }
+  .theme-icon-dark {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.4);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-icon-light {
+      opacity: 0;
+      transform: rotate(-90deg) scale(0.4);
+    }
+    :root:not([data-theme="light"]) .theme-icon-dark {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  :root[data-theme="dark"] .theme-icon-light {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.4);
+  }
+  :root[data-theme="dark"] .theme-icon-dark {
+    opacity: 1;
+    transform: none;
+  }
+  .animate-fade-in {
+    animation: fade-in var(--dur-med) var(--ease) both;
+  }
+  .animate-pop-in {
+    animation: pop-in var(--dur-med) var(--ease) both;
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Typing dots: staggered so the three bounce as a wave. */
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.2s infinite var(--ease);
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Motion is decorative here, so drop all of it when the user asks. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
