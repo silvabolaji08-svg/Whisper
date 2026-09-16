@@ -4,6 +4,8 @@ A multi-room realtime chat app built with Next.js (App Router), Socket.IO, and S
 
 ## Features
 
+- **Passwordless accounts** — sign in with a one-time code emailed to you. No
+  passwords are stored, so there are none to leak or reset.
 - **Live messaging** over WebSockets — messages appear instantly for everyone in a room.
 - **Multiple rooms** addressed by URL (`/r/general`). Share the link to invite someone.
 - **Presence** — see who is currently in the room, with a live connection indicator.
@@ -26,11 +28,18 @@ no native database dependency to compile.
 
 ```bash
 npm install
+cp .env.example .env.local   # optional for local development
 npm run dev
 ```
 
-Open http://localhost:3000, pick a display name and a room, then open the same room in
-a second browser window to see messages sync live.
+Open http://localhost:3000 and sign in with your email address.
+
+**Without an email provider configured, the login code is printed to the terminal
+running `npm run dev`** — copy it from there. That is all you need to develop locally;
+see [Email delivery](#email-delivery) to send real messages.
+
+Once signed in, pick a room, then open the same room in a second browser window (or a
+private window, signed in as a different address) to see messages sync live.
 
 ## Scripts
 
@@ -39,8 +48,8 @@ a second browser window to see messages sync live.
 | `npm run dev`   | Custom server with Socket.IO, watching for changes    |
 | `npm run build` | Production build of the Next.js app                   |
 | `npm start`     | Runs the production build (run `build` first)         |
-| `npm run lint`  | ESLint                                                |
 | `npm test`      | End-to-end tests against a real server (see below)    |
+| `npm run lint`  | ESLint                                                |
 
 `npm run dev:next` starts Next.js alone, without the socket server — useful only for
 working on pages in isolation, since chat will not connect.
@@ -53,6 +62,10 @@ src/lib/db.ts      SQLite persistence (node:sqlite)
 src/lib/types.ts   Shared message/event types and input validation
 src/lib/useChat.ts Client hook owning the socket lifecycle
 src/lib/useTheme.ts Theme store + the pre-paint init script
+src/lib/database.ts Shared SQLite connection and schema
+src/lib/auth/      Login codes, sessions, and email delivery
+src/app/api/auth/  Sign-in, verify, sign-out and profile endpoints
+src/app/login/     Sign-in screen
 src/components/    Chat UI, icon set, theme toggle
 src/app/globals.css Semantic design tokens for both themes
 src/app/r/[room]/  Room route
@@ -69,6 +82,47 @@ Messages are stored in `data/chat.db`, which is gitignored. Delete that file to 
 all history. Set `CHAT_DATA_DIR` to put the database elsewhere, such as a mounted
 volume in production.
 
+## Accounts and sign-in
+
+Sign-in is passwordless. You enter an email address, receive a six-digit code, and
+enter it. Signing up and logging in are the same flow: the account is created the
+first time an address proves it can receive a code.
+
+There are no passwords anywhere in the system — nothing to hash, reset, or leak.
+
+**What the server stores.** Codes and session tokens are never written in the clear:
+
+- Login codes are kept as an HMAC-SHA256 keyed with `AUTH_SECRET`. A plain hash would
+  be pointless, since six digits is only a million candidates and would fall to a
+  lookup table instantly.
+- Session tokens are 32 random bytes; only their SHA-256 is stored.
+
+**How a code is protected.** It expires after 10 minutes, survives at most 5 wrong
+guesses, is single-use, and is invalidated the moment a newer code is requested. An
+address may request 5 codes per hour. Comparison is constant-time.
+
+**Sessions** last 30 days in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in
+production), so no script on the page can read the token.
+
+**The socket is authenticated too.** The browser sends the session cookie with the
+WebSocket upgrade, and the server resolves it to an account before any event is
+handled. A connection without a valid session is refused outright.
+
+Crucially, the display name in a message comes from the **account**, never from the
+client payload — so a modified client cannot post as someone else.
+
+### Email delivery
+
+Codes are sent with [Resend](https://resend.com). Set `RESEND_API_KEY` and
+`EMAIL_FROM` in `.env.local`. `EMAIL_FROM` must use a domain verified in Resend;
+the default `onboarding@resend.dev` only delivers to the address that owns the
+Resend account, which is fine for a first test.
+
+With no key set, codes are printed to the server console instead. In production that
+fallback is refused outright — a deploy that forgot the key fails loudly rather than
+appearing to work while no mail is ever sent. (`AUTH_DEV_CONSOLE_CODES=true` is a
+deliberate opt-in for preview environments and is what the test suite uses.)
+
 ## Testing
 
 ```bash
@@ -76,10 +130,21 @@ npm test
 ```
 
 The suite boots the real server on a free port with a throwaway SQLite database
-(`CHAT_DATA_DIR`), then drives it over actual Socket.IO connections. It covers join
-and room normalization, presence on join/leave, broadcast fan-out, room isolation,
-the rate limiter, typing indicators, and history replay to a late joiner. Nothing is
+(`CHAT_DATA_DIR`) and drives it over actual HTTP and Socket.IO connections. Nothing is
 mocked, so it catches the integration bugs unit tests miss.
+
+It signs in the way a person does — requesting a code, reading it from the server's
+console output, and exchanging it for a session — then covers:
+
+- the OTP flow: wrong codes, reuse of a spent code, supersession by a newer code, and
+  the cookie's `HttpOnly`/`SameSite` flags
+- the socket refusing connections with no cookie, a forged token, or a signed-out one
+- identity coming from the account rather than the client payload
+- presence, broadcast fan-out, room isolation, typing indicators, history replay
+- the rate limiter, including that it survives a reconnect
+
+A `pretest` step builds into `.next-test`, separate from `.next`, so `npm test` works
+**while `npm run dev` is running** — Next allows only one dev server per directory.
 
 ## Theming
 
@@ -110,8 +175,12 @@ Ably, or Supabase Realtime — the client hook in `src/lib/useChat.ts` and the h
 
 ## Known constraints
 
-- Rooms are unauthenticated: anyone with the URL can join, and display names are not
-  reserved. Add real auth before using this for anything private.
+- Rooms are private only by obscurity: any **signed-in** user who has the URL can
+  join. There is no per-room membership or invite list yet.
+- Display names are not unique, so two accounts can pick the same one. Messages are
+  attributed to the account, but the name shown is not a reliable identifier.
+- Deliverability depends on your Resend domain setup; an unverified domain will land
+  codes in spam.
 - Presence is per connection, so one person with two tabs open appears once by name but
   holds two connections.
 - `node:sqlite` is still marked experimental by Node and prints a warning on startup.
