@@ -24,9 +24,8 @@ import {
   SendIcon,
 } from "@/components/icons";
 import { useChat, type ConnectionStatus } from "@/lib/useChat";
-import { useStoredName } from "@/lib/useStoredName";
 import { avatarClass, initial } from "@/lib/avatar";
-import { cleanText, MAX_MESSAGE_LENGTH, MAX_USERNAME_LENGTH } from "@/lib/types";
+import { MAX_MESSAGE_LENGTH } from "@/lib/types";
 import type { ChatMessage } from "@/lib/types";
 
 /** Treat consecutive messages from one person within this window as a single group. */
@@ -68,65 +67,6 @@ const STATUS_META: Record<ConnectionStatus, { label: string; color: string }> = 
   online: { label: "Live", color: "var(--online)" },
   offline: { label: "Offline", color: "var(--danger)" },
 };
-
-/** Prompt shown when we have no stored display name (e.g. someone opened a room link directly). */
-function NamePrompt({
-  room,
-  onSubmit,
-}: {
-  room: string;
-  onSubmit: (name: string) => void;
-}) {
-  const [value, setValue] = useState("");
-
-  return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex justify-end p-4">
-        <ThemeToggle />
-      </header>
-      <main className="flex flex-1 items-center justify-center px-4 pb-16">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const name = cleanText(value, MAX_USERNAME_LENGTH);
-            if (name) onSubmit(name);
-          }}
-          className="w-full max-w-sm space-y-5 rounded-2xl border border-border-default bg-surface p-7 shadow-(--shadow-lg)"
-        >
-          <div>
-            <h1 className="font-display text-xl font-semibold">
-              Choose a display name
-            </h1>
-            <p className="mt-1.5 text-sm leading-relaxed text-fg-muted">
-              This is how you will appear in{" "}
-              <span className="font-medium text-fg">#{room}</span>.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="display-name" className="block text-sm font-medium">
-              Display name
-            </label>
-            <input
-              id="display-name"
-              autoFocus
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              maxLength={MAX_USERNAME_LENGTH}
-              placeholder="Ada"
-              className="w-full rounded-xl border border-border-default bg-bg-elevated px-3.5 py-3 text-sm outline-none transition-colors duration-150 placeholder:text-fg-subtle hover:border-border-strong focus:border-primary focus:ring-4 focus:ring-primary/15"
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full cursor-pointer rounded-xl px-4 py-3 text-sm font-semibold surface-brand shadow-(--shadow-md) transition-[filter,transform] duration-150 hover:brightness-110 active:scale-[0.99]"
-          >
-            Continue
-          </button>
-        </form>
-      </main>
-    </div>
-  );
-}
 
 /** Overlapping avatars for the first few people present, with a +N overflow chip. */
 function PresenceStack({ users }: { users: string[] }) {
@@ -181,11 +121,16 @@ function TypingIndicator({ names }: { names: string[] }) {
   );
 }
 
-export default function ChatRoom({ room }: { room: string }) {
-  const [storedName, setStoredName] = useStoredName();
-  // Set when someone names themselves here, so the room renders without waiting on storage.
-  const [sessionName, setSessionName] = useState<string | null>(null);
-  const username = sessionName ?? storedName;
+export default function ChatRoom({
+  room,
+  displayName,
+}: {
+  room: string;
+  displayName: string;
+}) {
+  // Identity comes from the session now, so there is nothing to resolve on the
+  // client and no pre-hydration "unknown name" state to render around.
+  const username = displayName;
   const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -200,7 +145,7 @@ export default function ChatRoom({ room }: { room: string }) {
     send,
     notifyTyping,
     dismissError,
-  } = useChat(room, username ?? "");
+  } = useChat(room);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -295,27 +240,6 @@ export default function ChatRoom({ room }: { room: string }) {
   const items = useMemo(() => buildTimeline(messages), [messages]);
   const statusMeta = STATUS_META[status];
   const remaining = MAX_MESSAGE_LENGTH - draft.length;
-
-  // `undefined` is the pre-hydration state, where the stored name is not readable yet.
-  if (username === undefined) {
-    return (
-      <main className="flex flex-1 items-center justify-center p-6">
-        <p className="text-sm text-fg-subtle animate-fade-in">Loading #{room}…</p>
-      </main>
-    );
-  }
-
-  if (!username) {
-    return (
-      <NamePrompt
-        room={room}
-        onSubmit={(name) => {
-          setStoredName(name);
-          setSessionName(name);
-        }}
-      />
-    );
-  }
 
   return (
     // Pinned to exactly one viewport so the message list is the only thing that

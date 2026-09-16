@@ -3,12 +3,14 @@ import { randomUUID } from "node:crypto";
 import next from "next";
 import { Server, type Socket } from "socket.io";
 
-import { recentMessages, saveMessage } from "./src/lib/db";
+import { closeDatabase } from "./src/lib/database";
+import { pruneMessages, recentMessages, saveMessage } from "./src/lib/db";
+import { SESSION_COOKIE } from "./src/lib/auth/config";
+import { purgeExpired, userForToken, type User } from "./src/lib/auth/store";
 import {
   cleanText,
   normalizeRoom,
   MAX_MESSAGE_LENGTH,
-  MAX_USERNAME_LENGTH,
   type ChatMessage,
   type ClientToServerEvents,
   type ServerToClientEvents,
@@ -23,19 +25,43 @@ type SocketState = {
   room: string;
   username: string;
   typingUntil: number;
-  /** Timestamps of recent sends, used for a simple sliding-window rate limit. */
-  sends: number[];
 };
 
 const SEND_WINDOW_MS = 10_000;
 const SEND_LIMIT = 15;
 const TYPING_TTL_MS = 4000;
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 const state = new Map<string, SocketState>();
 
-type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+/**
+ * Send timestamps keyed by account, not by socket.
+ *
+ * Keying on socket.id would let anyone reset their own limit just by
+ * reconnecting, which is trivial to automate.
+ */
+const sendHistory = new Map<string, number[]>();
 
-function usersIn(io: Server<ClientToServerEvents, ServerToClientEvents>, room: string): string[] {
+type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents> & {
+  data: { user: User };
+};
+
+/** Minimal cookie header parser; avoids a dependency for one lookup. */
+function readCookie(header: string | undefined, name: string): string {
+  if (!header) return "";
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index === -1) continue;
+    if (part.slice(0, index).trim() !== name) continue;
+    return decodeURIComponent(part.slice(index + 1).trim());
+  }
+  return "";
+}
+
+function usersIn(
+  io: Server<ClientToServerEvents, ServerToClientEvents>,
+  room: string,
+): string[] {
   const ids = io.sockets.adapter.rooms.get(room);
   if (!ids) return [];
   const names = new Set<string>();
@@ -75,11 +101,17 @@ function broadcastTyping(
   }
 }
 
-function withinRateLimit(entry: SocketState): boolean {
+function withinRateLimit(userId: string): boolean {
   const now = Date.now();
-  entry.sends = entry.sends.filter((t) => now - t < SEND_WINDOW_MS);
-  if (entry.sends.length >= SEND_LIMIT) return false;
-  entry.sends.push(now);
+  const recent = (sendHistory.get(userId) ?? []).filter(
+    (at) => now - at < SEND_WINDOW_MS,
+  );
+  if (recent.length >= SEND_LIMIT) {
+    sendHistory.set(userId, recent);
+    return false;
+  }
+  recent.push(now);
+  sendHistory.set(userId, recent);
   return true;
 }
 
@@ -100,17 +132,32 @@ async function main(): Promise<void> {
     path: "/api/socket",
   });
 
+  /**
+   * Authenticate at the handshake, before any event is handled. The browser
+   * sends the session cookie with the upgrade request, so no token needs to be
+   * passed through client code where a script could read it.
+   */
+  io.use((socket, nextFn) => {
+    const token = readCookie(socket.handshake.headers.cookie, SESSION_COOKIE);
+    const user = token ? userForToken(token) : null;
+
+    if (!user) {
+      nextFn(new Error("unauthorized"));
+      return;
+    }
+
+    (socket as ChatSocket).data.user = user;
+    nextFn();
+  });
+
   io.on("connection", (socket: ChatSocket) => {
-    socket.on("join", ({ room, username } = { room: "", username: "" }) => {
+    const user = socket.data.user;
+
+    socket.on("join", ({ room } = { room: "" }) => {
       const normalizedRoom = normalizeRoom(room);
-      const cleanName = cleanText(username, MAX_USERNAME_LENGTH);
 
       if (!normalizedRoom) {
         socket.emit("rejected", "That room name is not valid.");
-        return;
-      }
-      if (!cleanName) {
-        socket.emit("rejected", "Please choose a display name.");
         return;
       }
 
@@ -123,13 +170,13 @@ async function main(): Promise<void> {
 
       state.set(socket.id, {
         room: normalizedRoom,
-        username: cleanName,
+        // Identity is the account's, never anything the client sent.
+        username: user.displayName,
         typingUntil: 0,
-        sends: [],
       });
       socket.join(normalizedRoom);
 
-      socket.emit("joined", { room: normalizedRoom, username: cleanName });
+      socket.emit("joined", { room: normalizedRoom, username: user.displayName });
 
       // History is a convenience: failing to load it must not stop the join.
       try {
@@ -153,7 +200,7 @@ async function main(): Promise<void> {
       const body = cleanText(text, MAX_MESSAGE_LENGTH);
       if (!body) return;
 
-      if (!withinRateLimit(entry)) {
+      if (!withinRateLimit(user.id)) {
         socket.emit("rejected", "You are sending messages too quickly.");
         return;
       }
@@ -201,12 +248,61 @@ async function main(): Promise<void> {
     for (const room of new Set([...state.values()].map((entry) => entry.room))) {
       broadcastTyping(io, room);
     }
+
+    // Drop rate-limit history for accounts that have gone quiet, so the map
+    // does not grow for the lifetime of the process.
+    const cutoff = Date.now() - SEND_WINDOW_MS;
+    for (const [userId, times] of sendHistory) {
+      if (times.every((at) => at < cutoff)) sendHistory.delete(userId);
+    }
   }, TYPING_TTL_MS);
   sweeper.unref();
+
+  // Only the newest messages per room are ever served; the rest are dead weight.
+  const pruner = setInterval(() => {
+    try {
+      const removed = pruneMessages();
+      if (removed > 0) console.log(`Pruned ${removed} old message(s).`);
+      purgeExpired();
+    } catch (error) {
+      console.error("Housekeeping failed:", error);
+    }
+  }, PRUNE_INTERVAL_MS);
+  pruner.unref();
 
   httpServer.listen(port, () => {
     console.log(`> Chat server ready on http://${hostname}:${port}`);
   });
+
+  /**
+   * Close in order on a shutdown signal: stop timers, tell clients to go away
+   * so they reconnect to the replacement instance, then close the HTTP server
+   * and the database. Without this, a deploy severs sockets mid-write.
+   */
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n${signal} received, shutting down…`);
+
+    clearInterval(sweeper);
+    clearInterval(pruner);
+
+    const done = () => {
+      closeDatabase();
+      process.exit(0);
+    };
+
+    io.close(() => {
+      httpServer.close(done);
+    });
+
+    // Do not hang forever on a stuck connection.
+    setTimeout(done, 10_000).unref();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch((error) => {

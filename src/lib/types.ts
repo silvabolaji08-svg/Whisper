@@ -18,7 +18,8 @@ export interface ServerToClientEvents {
 
 /** Events a client sends up to the server. */
 export interface ClientToServerEvents {
-  join: (payload: { room: string; username: string }) => void;
+  // No username: the server takes identity from the session, never the client.
+  join: (payload: { room: string }) => void;
   message: (payload: { text: string }) => void;
   typing: (payload: { isTyping: boolean }) => void;
 }

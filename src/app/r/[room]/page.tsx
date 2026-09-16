@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import ChatRoom from "@/components/ChatRoom";
+import { currentUser } from "@/lib/auth/session";
 import { normalizeRoom } from "@/lib/types";
 
 export default async function RoomPage({
@@ -16,5 +17,9 @@ export default async function RoomPage({
   if (!slug) redirect("/");
   if (slug !== room) redirect(`/r/${slug}`);
 
-  return <ChatRoom room={slug} />;
+  // Bounce to sign-in, remembering the room so the link still works after.
+  const user = await currentUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/r/${slug}`)}`);
+
+  return <ChatRoom room={slug} displayName={user.displayName} />;
 }

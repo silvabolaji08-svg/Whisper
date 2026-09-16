@@ -15,7 +15,7 @@ type ChatSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 const TYPING_THROTTLE_MS = 2000;
 
-export function useChat(room: string, username: string) {
+export function useChat(room: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<string[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -26,7 +26,7 @@ export function useChat(room: string, username: string) {
   const lastTypingSentAt = useRef(0);
 
   useEffect(() => {
-    if (!room || !username) return;
+    if (!room) return;
 
     const socket: ChatSocket = io({ path: "/api/socket" });
     socketRef.current = socket;
@@ -34,7 +34,7 @@ export function useChat(room: string, username: string) {
     const join = () => {
       setStatus("online");
       setError(null);
-      socket.emit("join", { room, username });
+      socket.emit("join", { room });
     };
 
     socket.on("connect", join);
@@ -54,7 +54,7 @@ export function useChat(room: string, username: string) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [room, username]);
+  }, [room]);
 
   const send = useCallback((text: string) => {
     const socket = socketRef.current;
