@@ -8,25 +8,29 @@
     "build": "next build",
     "start": "cross-env NODE_ENV=production tsx server.ts",
     "lint": "eslint",
-    "test": "node --test"
+    "test": "node --test",
+    "pretest": "cross-env NEXT_DIST_DIR=.next-test next build"
   },
   "dependencies": {
+    "cross-env": "^10.1.0",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "tsx": "^4.23.13"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
-    "tsx": "^4.23.13",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=22.5.0"
   }
 }
