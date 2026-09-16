@@ -48,7 +48,9 @@ private window, signed in as a different address) to see messages sync live.
 | `npm run dev`   | Custom server with Socket.IO, watching for changes    |
 | `npm run build` | Production build of the Next.js app                   |
 | `npm start`     | Runs the production build (run `build` first)         |
+| `npm run typecheck` | TypeScript, no emit                               |
 | `npm test`      | End-to-end tests against a real server (see below)    |
+| `npm run email:check` | Verify email delivery is configured (see below) |
 | `npm run lint`  | ESLint                                                |
 
 `npm run dev:next` starts Next.js alone, without the socket server — useful only for
@@ -118,6 +120,16 @@ Codes are sent with [Resend](https://resend.com). Set `RESEND_API_KEY` and
 the default `onboarding@resend.dev` only delivers to the address that owns the
 Resend account, which is fine for a first test.
 
+To confirm a key works before relying on it:
+
+```bash
+npm run email:check                       # report configuration only
+npm run email:check you@example.com       # also send a real test message
+```
+
+It reads `.env.local`, so the key never goes on the command line, and it
+explains the specific failure when Resend rejects a request.
+
 With no key set, codes are printed to the server console instead. In production that
 fallback is refused outright — a deploy that forgot the key fails loudly rather than
 appearing to work while no mail is ever sent. (`AUTH_DEV_CONSOLE_CODES=true` is a
@@ -145,6 +157,10 @@ console output, and exchanging it for a session — then covers:
 
 A `pretest` step builds into `.next-test`, separate from `.next`, so `npm test` works
 **while `npm run dev` is running** — Next allows only one dev server per directory.
+
+`.github/workflows/ci.yml` runs lint, typecheck and the suite on every push and pull
+request. It needs no services or secrets: the tests use a throwaway SQLite database
+and read login codes from the server's own console output.
 
 ## Theming
 

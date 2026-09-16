@@ -8,8 +8,10 @@
     "build": "next build",
     "start": "cross-env NODE_ENV=production tsx server.ts",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "pretest": "cross-env NEXT_DIST_DIR=.next-test next build",
     "test": "node --test",
-    "pretest": "cross-env NEXT_DIST_DIR=.next-test next build"
+    "email:check": "node --env-file-if-exists=.env.local scripts/check-email.mjs"
   },
   "dependencies": {
     "cross-env": "^10.1.0",
