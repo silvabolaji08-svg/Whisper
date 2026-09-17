@@ -28,15 +28,24 @@ jobs:
 
       - run: npm ci
 
+      # Must come before the typecheck. Next generates types a fresh checkout
+      # does not have — `LayoutProps` among them — so `tsc` fails without a
+      # build first. Building into .next-test also means the test step does not
+      # have to repeat it.
+      - name: Build
+        run: npm run build:test
+
       - name: Lint
         run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
 
-      # `pretest` builds into .next-test, then the suite boots a real server and
-      # drives it over HTTP and Socket.IO. No extra services are needed: it uses
-      # a throwaway SQLite database and reads login codes from the server's own
-      # console output.
+      # `node --test` directly rather than `npm test`, because that would run
+      # the pretest build again for nothing.
+      #
+      # The suite boots a real server and drives it over HTTP and Socket
+      # connections. No services are needed: it uses a throwaway PGlite
+      # database and reads login codes from the server's own console output.
       - name: Test
-        run: npm test
+        run: node --test

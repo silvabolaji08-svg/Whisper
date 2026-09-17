@@ -6,10 +6,11 @@
     "dev": "tsx watch --clear-screen=false server.ts",
     "dev:next": "next dev",
     "build": "next build",
+    "build:test": "cross-env NEXT_DIST_DIR=.next-test next build",
     "start": "cross-env NODE_ENV=production tsx server.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "pretest": "cross-env NEXT_DIST_DIR=.next-test next build",
+    "pretest": "npm run build:test",
     "test": "node --test",
     "email:check": "node --env-file-if-exists=.env.local scripts/check-email.mjs"
   },
