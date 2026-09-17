@@ -10,9 +10,15 @@ export const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 export const CODE_LENGTH = 6;
 /** Wrong guesses allowed before the code is burned. */
 export const CODE_MAX_ATTEMPTS = 5;
-/** Codes a single address may request per window, to stop mailbox flooding. */
-export const CODE_REQUESTS_PER_WINDOW = 5;
-export const CODE_REQUEST_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+/**
+ * Codes a single address may request per window, to stop mailbox flooding.
+ *
+ * Generous enough to survive a mistyped address, a code lost to spam and a few
+ * retries in a row, which five was not: a normal person testing the flow hit
+ * the wall before signing in once.
+ */
+export const CODE_REQUESTS_PER_WINDOW = 10;
+export const CODE_REQUEST_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
 export const MAX_EMAIL_LENGTH = 254; // RFC 5321 practical maximum
 

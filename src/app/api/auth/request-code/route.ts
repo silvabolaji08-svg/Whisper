@@ -4,7 +4,7 @@ import {
   emailIsConfigured,
   sendLoginCode,
 } from "@/lib/auth/email";
-import { issueCode, isRequestingTooOften, purgeExpired } from "@/lib/auth/store";
+import { issueCode, purgeExpired, requestAllowance } from "@/lib/auth/store";
 
 /**
  * Step one of sign-in: email an one-time code.
@@ -30,10 +30,18 @@ export async function POST(request: Request) {
 
   const email = normalizeEmail(raw);
 
-  if (await isRequestingTooOften(email)) {
+  const allowance = await requestAllowance(email);
+  if (allowance.limited) {
+    const minutes = Math.max(1, Math.ceil(allowance.retryAfterMs / 60_000));
     return Response.json(
-      { error: "Too many codes requested. Try again later." },
-      { status: 429 },
+      {
+        error: `Too many codes requested. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      },
+      {
+        status: 429,
+        // Standard header, so a client or proxy can honour it too.
+        headers: { "Retry-After": String(Math.ceil(allowance.retryAfterMs / 1000)) },
+      },
     );
   }
 

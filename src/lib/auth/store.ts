@@ -130,13 +130,33 @@ export async function updateDisplayName(
 
 export type IssuedCode = { code: string; expiresAt: number };
 
-/** True when this address has asked for too many codes recently. */
-export async function isRequestingTooOften(email: string): Promise<boolean> {
-  const row = await queryOne<Row & { count: string | number }>(
-    "SELECT COUNT(*) AS count FROM login_codes WHERE email = $1 AND created_at > $2",
-    [email, Date.now() - CODE_REQUEST_WINDOW_MS],
+/**
+ * Whether this address has asked for too many codes recently, and when the
+ * next slot frees up.
+ *
+ * The window rolls, so a slot opens once the oldest request in it ages out —
+ * which is what the caller tells the user, rather than "try again later".
+ */
+export async function requestAllowance(
+  email: string,
+): Promise<{ limited: boolean; retryAfterMs: number }> {
+  const since = Date.now() - CODE_REQUEST_WINDOW_MS;
+  const row = await queryOne<
+    Row & { count: string | number; oldest: string | number | null }
+  >(
+    `SELECT COUNT(*) AS count, MIN(created_at) AS oldest
+     FROM login_codes WHERE email = $1 AND created_at > $2`,
+    [email, since],
   );
-  return toNumber(row?.count ?? 0) >= CODE_REQUESTS_PER_WINDOW;
+
+  const used = toNumber(row?.count ?? 0);
+  if (used < CODE_REQUESTS_PER_WINDOW) return { limited: false, retryAfterMs: 0 };
+
+  const oldest = row?.oldest == null ? Date.now() : toNumber(row.oldest);
+  return {
+    limited: true,
+    retryAfterMs: Math.max(0, oldest + CODE_REQUEST_WINDOW_MS - Date.now()),
+  };
 }
 
 /**
