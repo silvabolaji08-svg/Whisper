@@ -83,9 +83,14 @@ if (response.status === 401) {
   info("401 means the API key is wrong or was revoked.");
   info("Create a fresh one at https://resend.com/api-keys");
 } else if (response.status === 403) {
-  info("403 usually means EMAIL_FROM uses a domain you have not verified,");
-  info("or you are using onboarding@resend.dev to reach an address other");
-  info("than the one that owns the Resend account.");
+  info("403 is about EMAIL_FROM — the address mail is sent *from*, which is");
+  info("not your own inbox. You cannot send from gmail.com (or any domain you");
+  info("do not control); Resend has to verify ownership first.");
+  info("");
+  info("Either keep the shared sender:");
+  info('  EMAIL_FROM="Realtime Chat <onboarding@resend.dev>"');
+  info("which only delivers to the address that owns the Resend account, or");
+  info("verify a domain at https://resend.com/domains to email anyone else.");
 } else if (response.status === 422) {
   info("422 means the payload was rejected — most often a malformed");
   info("EMAIL_FROM. It must look like: Name <user@domain.com>");
