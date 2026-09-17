@@ -201,6 +201,12 @@ WebSocket endpoint is the Route Handler at `src/app/api/socket/route.ts`, built
 on Vercel's `experimental_upgradeWebSocket`. Both call the same code; only the
 upgrade differs.
 
+The two are served from **different paths** — `/api/socket` on Vercel, `/_ws`
+on the custom server — and the page tells the client which to use. They have to
+differ: Next's own upgrade handler ends any upgrade whose path matches a route
+and only leaves unmatched paths alone for a custom WebSocket server, so the
+local socket cannot share a path with the Route Handler.
+
 Because functions have no disk and no shared memory, two services are required:
 
 1. **Postgres** — add Neon from the Vercel Marketplace. It sets `DATABASE_URL`.

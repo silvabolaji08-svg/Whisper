@@ -10,7 +10,7 @@ import {
   handleConnection,
   userFromCookieHeader,
 } from "./src/lib/realtime/connection";
-import { SOCKET_PATH } from "./src/lib/realtime/protocol";
+import { SOCKET_PATH_NODE } from "./src/lib/realtime/protocol";
 
 /**
  * The development and self-hosted server.
@@ -29,22 +29,9 @@ const port = Number(process.env.PORT ?? 3000);
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 async function main(): Promise<void> {
-  /**
-   * Next attaches its own "upgrade" listener for the dev HMR socket, on the
-   * first request, to whichever server it is given. Left to itself it claims
-   * every upgrade — including ours — and destroys the ones it does not
-   * recognise, with no error logged.
-   *
-   * Handing it a server that never listens keeps that listener off the real
-   * one, so this file owns upgrades and forwards the non-chat ones to Next's
-   * handler explicitly. HMR keeps working; the chat socket stops being killed.
-   */
-  const decoyServer = createServer();
-
-  const app = next({ dev, hostname, port, httpServer: decoyServer });
+  const app = next({ dev, hostname, port });
   await app.prepare();
   const handle = app.getRequestHandler();
-  const nextUpgrade = app.getUpgradeHandler();
 
   const httpServer = createServer((req, res) => {
     handle(req, res).catch((error) => {
@@ -63,11 +50,9 @@ async function main(): Promise<void> {
       request.url ?? "/",
       `http://${request.headers.host}`,
     );
-    if (pathname !== SOCKET_PATH) {
-      // Anything else is Next's (the HMR socket in development).
-      void nextUpgrade(request, socket, head);
-      return;
-    }
+    // Anything else is Next's own — the HMR socket in development. Next
+    // attaches its own listener for those, so leaving it alone is enough.
+    if (pathname !== SOCKET_PATH_NODE) return;
 
     // Upgrade synchronously. Next attaches its own "upgrade" listener for HMR
     // on the first request, and awaiting the session lookup before calling

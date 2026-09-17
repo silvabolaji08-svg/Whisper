@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import ChatRoom from "@/components/ChatRoom";
 import { currentUser } from "@/lib/auth/session";
 import { normalizeRoom } from "@/lib/types";
+import { serverSocketPath } from "@/lib/realtime/protocol";
 
 export default async function RoomPage({
   params,
@@ -21,5 +22,11 @@ export default async function RoomPage({
   const user = await currentUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(`/r/${slug}`)}`);
 
-  return <ChatRoom room={slug} displayName={user.displayName} />;
+  return (
+    <ChatRoom
+      room={slug}
+      displayName={user.displayName}
+      socketPath={serverSocketPath()}
+    />
+  );
 }

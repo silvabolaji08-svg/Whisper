@@ -27,7 +27,9 @@ import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOCKET_PATH = "/api/socket";
+// The custom server serves the socket here; /api/socket is the Vercel Route
+// Handler, which Next's own upgrade handler would close on this server.
+const SOCKET_PATH = "/_ws";
 const SESSION_COOKIE = "chat_session";
 /** Kept separate from .next so the suite never clobbers a dev server's build. */
 const TEST_DIST_DIR = ".next-test";

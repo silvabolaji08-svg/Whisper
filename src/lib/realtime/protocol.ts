@@ -74,5 +74,22 @@ export function decodeServerFrame(raw: string): ServerFrame | null {
   return parsed as ServerFrame;
 }
 
-/** Path the WebSocket endpoint is served from, in both transports. */
-export const SOCKET_PATH = "/api/socket";
+/**
+ * The two transports must be served from different paths.
+ *
+ * On Vercel the endpoint is a Route Handler, so it lives at a route path. On
+ * the custom server it must NOT be one: Next's own upgrade handler ends any
+ * upgrade whose path matches a route ("if (matchedOutput) return socket.end()")
+ * and only leaves unmatched paths for a custom WebSocket server. Serving the
+ * local socket at /api/socket therefore has Next close it immediately.
+ *
+ * Which one is in use is decided on the server and passed to the client, since
+ * only the server knows where it is running.
+ */
+export const SOCKET_PATH_ROUTE = "/api/socket";
+export const SOCKET_PATH_NODE = "/_ws";
+
+/** Vercel sets VERCEL=1 in every deployment. */
+export function serverSocketPath(): string {
+  return process.env.VERCEL ? SOCKET_PATH_ROUTE : SOCKET_PATH_NODE;
+}

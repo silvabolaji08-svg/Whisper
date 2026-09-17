@@ -6,7 +6,6 @@ import type { ChatMessage } from "./types";
 import {
   decodeServerFrame,
   encode,
-  SOCKET_PATH,
   type ClientFrame,
 } from "./realtime/protocol";
 
@@ -27,12 +26,12 @@ const OFFLINE_GRACE_MS = 3000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 15_000;
 
-function socketUrl(): string {
+function socketUrl(path: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}${SOCKET_PATH}`;
+  return `${protocol}//${window.location.host}${path}`;
 }
 
-export function useChat(room: string) {
+export function useChat(room: string, socketPath: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<string[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -46,7 +45,7 @@ export function useChat(room: string) {
   const outbox = useRef<string[]>([]);
 
   useEffect(() => {
-    if (!room) return;
+    if (!room || !socketPath) return;
 
     closedByUs.current = false;
     let attempt = 0;
@@ -61,7 +60,7 @@ export function useChat(room: string) {
     };
 
     const connect = () => {
-      socket = new WebSocket(socketUrl());
+      socket = new WebSocket(socketUrl(socketPath));
       socketRef.current = socket;
 
       socket.onopen = () => {
@@ -151,7 +150,7 @@ export function useChat(room: string) {
       }
       socketRef.current = null;
     };
-  }, [room]);
+  }, [room, socketPath]);
 
   const send = useCallback((text: string) => {
     const body = text.trim();

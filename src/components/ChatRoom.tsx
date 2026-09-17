@@ -125,9 +125,12 @@ function TypingIndicator({ names }: { names: string[] }) {
 export default function ChatRoom({
   room,
   displayName,
+  socketPath,
 }: {
   room: string;
   displayName: string;
+  /** Decided on the server: the two transports live at different paths. */
+  socketPath: string;
 }) {
   // Identity comes from the session now, so there is nothing to resolve on the
   // client and no pre-hydration "unknown name" state to render around.
@@ -146,7 +149,7 @@ export default function ChatRoom({
     send,
     notifyTyping,
     dismissError,
-  } = useChat(room);
+  } = useChat(room, socketPath);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
