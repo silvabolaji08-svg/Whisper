@@ -185,10 +185,31 @@ npm run build
 npm start        # honours the PORT environment variable
 ```
 
-It will **not** work on Vercel's serverless platform, which cannot hold open sockets. To
-deploy there, replace the Socket.IO layer with a hosted realtime service such as Pusher,
-Ably, or Supabase Realtime — the client hook in `src/lib/useChat.ts` and the handlers in
-`server.ts` are the only places that would change.
+Set `AUTH_SECRET` and `RESEND_API_KEY` in the host's environment, and point
+`CHAT_DATA_DIR` at a mounted volume so the database survives a redeploy.
+
+### About Vercel
+
+Vercel now [supports WebSockets](https://vercel.com/docs/functions/websockets),
+including a documented Socket.IO path, so sockets are no longer the obstacle they
+once were. The blocker for *this* app is **state, not transport**:
+
+- **SQLite lives on local disk.** A function's filesystem is ephemeral and private to
+  each instance, so messages, accounts and sessions would not survive or be shared.
+  Vercel's answer is managed Postgres/Redis, not a mounted volume.
+- **Presence, typing and rate limits live in memory** (`Map`s in `server.ts`). Separate
+  instances do not share memory, so presence would be wrong and broadcasts would not
+  reach everyone.
+- **`server.ts` hosts the Next handler itself**, which Vercel does instead. The socket
+  server would move into a function.
+
+So deploying to Vercel means doing the same work as running more than one instance
+anywhere: a hosted database, and a Socket.IO Redis adapter for cross-instance
+broadcast. Note also that the Next.js binding is still
+`experimental_upgradeWebSocket`.
+
+A long-lived Node host avoids all of that today, which is why the instructions above
+are the default.
 
 ## Known constraints
 
