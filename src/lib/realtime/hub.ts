@@ -325,15 +325,49 @@ const globalCache = globalThis as unknown as Record<symbol, Cache | undefined>;
 globalCache[CACHE] ??= { hub: null };
 const cache = globalCache[CACHE]!;
 
+/**
+ * Says plainly that this instance cannot see the others.
+ *
+ * Without shared state the failure is invisible from the inside: each instance
+ * works perfectly, and only a person whose message never arrives would notice.
+ * Anywhere that runs more than one instance, that has to be said out loud.
+ */
+function warnAboutIsolatedState(reason: string): void {
+  // VERCEL is set in every deployment there; a long-lived host runs one process
+  // and is genuinely fine without Redis.
+  if (!process.env.VERCEL) return;
+
+  console.warn(
+    [
+      "",
+      "  ⚠ REDIS_URL is not configured, so presence and message delivery are",
+      `    limited to a single instance (${reason}).`,
+      "",
+      "    Vercel pins a WebSocket to one instance and makes no promise the",
+      "    next connection lands on the same one. Two people on different",
+      "    instances will not see each other's messages, and nothing will",
+      "    report an error when that happens.",
+      "",
+      "    Fix: create a free database at https://upstash.com, then set",
+      "    REDIS_URL to its rediss:// URL (not the https:// REST one).",
+      "",
+    ].join("\n"),
+  );
+}
+
 export function getHub(): Promise<Hub> {
   cache.hub ??= (async () => {
     const url = process.env.REDIS_URL;
-    if (!url) return new MemoryHub();
+    if (!url) {
+      warnAboutIsolatedState("no REDIS_URL set");
+      return new MemoryHub();
+    }
     try {
       return await RedisHub.create(url);
     } catch (error) {
       // A chat that works on one instance beats one that will not start.
       console.error("Redis unavailable, falling back to in-process state:", error);
+      warnAboutIsolatedState("Redis could not be reached");
       return new MemoryHub();
     }
   })().catch((error) => {
