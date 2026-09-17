@@ -240,12 +240,12 @@ class RedisHub implements Hub {
     return this.publisher.zRangeByScore(key, now, "+inf");
   }
 
-  // Entries are "<connectionId> <username>" so one person with two tabs
+  // Entries are "<connectionId>\0<username>" so one person with two tabs
   // is two entries but one name.
   private static pack = (connectionId: string, username: string) =>
-    `${connectionId} ${username}`;
-  private static nameOf = (entry: string) => entry.split(" ")[1] ?? "";
-  private static idOf = (entry: string) => entry.split(" ")[0] ?? "";
+    `${connectionId}\0${username}`;
+  private static nameOf = (entry: string) => entry.split("\0")[1] ?? "";
+  private static idOf = (entry: string) => entry.split("\0")[0] ?? "";
 
   async join(room: string, connectionId: string, username: string) {
     await this.touch(
