@@ -52,11 +52,12 @@ export async function sendLoginCode(
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM ?? "Realtime Chat <onboarding@resend.dev>";
 
-  if (!apiKey) {
-    // Development fallback. Never reached in production: the route refuses to
-    // issue a code when the provider is unconfigured there.
+  // forceConsoleCodes wins over a configured key on purpose: the suite reads
+  // codes from stdout, and Next loads .env.local automatically, so a developer
+  // who has set RESEND_API_KEY would otherwise break the tests.
+  if (forceConsoleCodes() || !apiKey) {
     console.info(
-      `\n  [auth] No RESEND_API_KEY set — login code for ${email} is: ${code}\n`,
+      `\n  [auth] login code for ${email} is: ${code}\n`,
     );
     return { delivered: false, loggedToConsole: true };
   }
@@ -90,16 +91,23 @@ export function emailIsConfigured(): boolean {
 }
 
 /**
- * Whether printing codes to the console is acceptable.
+ * Explicit opt-in that prints codes to the console instead of emailing them,
+ * even when a provider key is configured.
  *
- * Always fine outside production. In production it takes a deliberate opt-in,
- * so a deploy that simply forgot RESEND_API_KEY fails loudly instead of
- * appearing to work while no mail is ever sent. The test suite sets this
- * because it runs the server in production mode.
+ * Used by the test suite, which reads codes from the server's stdout, and by
+ * preview environments that should never send real mail.
+ */
+export function forceConsoleCodes(): boolean {
+  return process.env.AUTH_DEV_CONSOLE_CODES === "true";
+}
+
+/**
+ * Whether falling back to the console is acceptable when no provider is set.
+ *
+ * Always fine outside production. In production it takes the deliberate opt-in
+ * above, so a deploy that simply forgot RESEND_API_KEY fails loudly instead of
+ * appearing to work while no mail is ever sent.
  */
 export function consoleCodesAllowed(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" ||
-    process.env.AUTH_DEV_CONSOLE_CODES === "true"
-  );
+  return process.env.NODE_ENV !== "production" || forceConsoleCodes();
 }

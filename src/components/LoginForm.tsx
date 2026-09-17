@@ -55,7 +55,7 @@ export default function LoginForm({ next }: { next: string }) {
       setCooldown(RESEND_COOLDOWN_S);
       setNotice(
         data.devCodeInConsole
-          ? "No email provider is configured, so the code was printed to the server console."
+          ? "The code was printed to the server console, not emailed."
           : `We sent a ${CODE_LENGTH}-digit code to ${address}.`,
       );
       return true;

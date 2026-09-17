@@ -132,8 +132,9 @@ explains the specific failure when Resend rejects a request.
 
 With no key set, codes are printed to the server console instead. In production that
 fallback is refused outright — a deploy that forgot the key fails loudly rather than
-appearing to work while no mail is ever sent. (`AUTH_DEV_CONSOLE_CODES=true` is a
-deliberate opt-in for preview environments and is what the test suite uses.)
+appearing to work while no mail is ever sent. `AUTH_DEV_CONSOLE_CODES=true` forces console output even when a key *is*
+configured — the test suite relies on it, since Next loads `.env.local`
+automatically and a developer's own key would otherwise break the suite.
 
 ## Testing
 
