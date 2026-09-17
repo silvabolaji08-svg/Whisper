@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 
 import ThemeToggle from "@/components/ThemeToggle";
 import Wordmark from "@/components/Wordmark";
+import Logo from "@/components/Logo";
 import {
   AlertIcon,
   CheckIcon,
   LogoutIcon,
-  MessageIcon,
   PencilIcon,
   ShuffleIcon,
 } from "@/components/icons";
@@ -123,12 +123,7 @@ export default function JoinForm({
       <main className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="w-full max-w-md">
           <div className="mb-8 flex flex-col items-center text-center">
-            <span
-              className="mb-5 grid size-14 place-items-center rounded-2xl surface-brand shadow-(--shadow-md)"
-              aria-hidden="true"
-            >
-              <MessageIcon size={26} />
-            </span>
+            <Logo size={64} className="mb-5 shadow-(--shadow-md) rounded-[18px]" />
             <h1 className="text-5xl sm:text-6xl">
               <Wordmark />
             </h1>

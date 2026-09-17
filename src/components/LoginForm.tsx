@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import { AlertIcon, ArrowLeftIcon, MessageIcon } from "@/components/icons";
+import { AlertIcon, ArrowLeftIcon } from "@/components/icons";
 import Wordmark from "@/components/Wordmark";
+import Logo from "@/components/Logo";
 
 const CODE_LENGTH = 6;
 /** Wait before "Resend code" becomes available, matching the server's patience. */
@@ -116,12 +117,7 @@ export default function LoginForm({ next }: { next: string }) {
     <main className="flex flex-1 items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <span
-            className="mb-5 grid size-14 place-items-center rounded-2xl surface-brand shadow-(--shadow-md)"
-            aria-hidden="true"
-          >
-            <MessageIcon size={26} />
-          </span>
+          <Logo size={64} className="mb-5 shadow-(--shadow-md) rounded-[18px]" />
           <p className="mb-2 text-5xl">
             <Wordmark />
           </p>
