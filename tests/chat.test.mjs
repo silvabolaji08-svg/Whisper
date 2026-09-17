@@ -7,8 +7,11 @@
  * broadcast fan-out, presence bookkeeping, SQLite history replay and the
  * rate limiter.
  *
- * With no RESEND_API_KEY set the server prints login codes to stdout, which is
- * how these tests obtain them — the same path a developer uses locally.
+ * The suite sets AUTH_DEV_CONSOLE_CODES, which forces the server to print login
+ * codes to stdout rather than emailing them, and reads them from there. That is
+ * deliberate rather than relying on RESEND_API_KEY being absent: Next loads
+ * .env.local automatically, so a developer's own key would otherwise send the
+ * codes to a real inbox and strand the suite waiting on output.
  *
  * Run with `npm test`.
  */
