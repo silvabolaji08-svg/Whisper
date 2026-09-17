@@ -59,12 +59,14 @@ working on pages in isolation, since chat will not connect.
 ## How it works
 
 ```
-server.ts          Custom Node server: Next.js request handler + Socket.IO
+server.ts          Local/self-hosted server: Next.js + the WebSocket endpoint
+src/lib/realtime/  Frame protocol, connection logic, and the presence hub
+src/app/api/socket/ The same endpoint as a Vercel Route Handler
 src/lib/db.ts      SQLite persistence (node:sqlite)
 src/lib/types.ts   Shared message/event types and input validation
-src/lib/useChat.ts Client hook owning the socket lifecycle
+src/lib/useChat.ts Client hook owning the socket lifecycle and reconnects
 src/lib/useTheme.ts Theme store + the pre-paint init script
-src/lib/database.ts Shared SQLite connection and schema
+src/lib/database.ts Postgres access (node-postgres, or PGlite locally)
 src/lib/auth/      Login codes, sessions, and email delivery
 src/app/api/auth/  Sign-in, verify, sign-out and profile endpoints
 src/app/login/     Sign-in screen
@@ -176,45 +178,56 @@ value before the first paint.
 
 ## Deploying
 
-This app needs a host that supports **long-lived Node processes**, because Socket.IO
-holds persistent WebSocket connections. Railway, Render, Fly.io, and a plain VPS all
-work:
+The app runs in two shapes from one codebase.
+
+### On a long-lived host (Railway, Render, Fly.io, a VPS)
+
+`server.ts` serves both Next.js and the WebSocket endpoint. Nothing external is
+required beyond email:
 
 ```bash
 npm run build
-npm start        # honours the PORT environment variable
+npm start        # honours PORT
 ```
 
-Set `AUTH_SECRET` and `RESEND_API_KEY` in the host's environment, and point
-`CHAT_DATA_DIR` at a mounted volume so the database survives a redeploy.
+Set `AUTH_SECRET` and `RESEND_API_KEY`. Without `DATABASE_URL` the app keeps its
+data in PGlite under `CHAT_DATA_DIR`, so point that at a mounted volume, or set
+`DATABASE_URL` and use a managed Postgres.
 
-### About Vercel
+### On Vercel
 
-Vercel now [supports WebSockets](https://vercel.com/docs/functions/websockets),
-including a documented Socket.IO path, so sockets are no longer the obstacle they
-once were. The blocker for *this* app is **state, not transport**:
+Vercel does not run custom servers, so `server.ts` is not used there. The
+WebSocket endpoint is the Route Handler at `src/app/api/socket/route.ts`, built
+on Vercel's `experimental_upgradeWebSocket`. Both call the same code; only the
+upgrade differs.
 
-- **SQLite lives on local disk.** A function's filesystem is ephemeral and private to
-  each instance, so messages, accounts and sessions would not survive or be shared.
-  Vercel's answer is managed Postgres/Redis, not a mounted volume.
-- **Presence, typing and rate limits live in memory** (`Map`s in `server.ts`). Separate
-  instances do not share memory, so presence would be wrong and broadcasts would not
-  reach everyone.
-- **`server.ts` hosts the Next handler itself**, which Vercel does instead. The socket
-  server would move into a function.
+Because functions have no disk and no shared memory, two services are required:
 
-So deploying to Vercel means doing the same work as running more than one instance
-anywhere: a hosted database, and a Socket.IO Redis adapter for cross-instance
-broadcast. Note also that the Next.js binding is still
-`experimental_upgradeWebSocket`.
+1. **Postgres** — add Neon from the Vercel Marketplace. It sets `DATABASE_URL`.
+2. **Redis** — add Upstash from the Marketplace, and expose it as `REDIS_URL`.
+   Without it, presence and fan-out break as soon as two people land on
+   different instances.
 
-A long-lived Node host avoids all of that today, which is why the instructions above
-are the default.
+Then set `AUTH_SECRET` and `RESEND_API_KEY` in the project's environment
+variables and deploy.
+
+**Expect a reconnect every few minutes.** A WebSocket is closed when the
+function reaches its maximum duration — 300 seconds on Hobby, and extended
+durations are Pro-only. The client treats this as routine: it reconnects with
+jittered backoff, holds the "Live" indicator through a short grace period,
+queues anything typed while the socket is down, and de-duplicates replayed
+messages. Billing is Active-CPU, so idle connection time is not charged.
+
+WebSocket support on Vercel is in public beta and the Next.js binding is still
+named `experimental_upgradeWebSocket`.
 
 ## Known constraints
 
 - Rooms are private only by obscurity: any **signed-in** user who has the URL can
   join. There is no per-room membership or invite list yet.
+- The Vercel Route Handler transport can only be exercised by deploying; the
+  shared connection logic underneath it is covered by the test suite through the
+  local `ws` transport.
 - Display names are not unique, so two accounts can pick the same one. Messages are
   attributed to the account, but the name shown is not a reliable identifier.
 - Deliverability depends on your Resend domain setup; an unverified domain will land
