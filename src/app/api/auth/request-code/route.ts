@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   const email = normalizeEmail(raw);
 
-  if (isRequestingTooOften(email)) {
+  if (await isRequestingTooOften(email)) {
     return Response.json(
       { error: "Too many codes requested. Try again later." },
       { status: 429 },
@@ -47,11 +47,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const { code } = issueCode(email);
+  const { code } = await issueCode(email);
 
   try {
     const { loggedToConsole } = await sendLoginCode(email, code);
-    purgeExpired(); // Cheap housekeeping on a naturally rate-limited path.
+    await purgeExpired(); // Cheap housekeeping on a naturally rate-limited path.
     return Response.json({ ok: true, devCodeInConsole: loggedToConsole });
   } catch (error) {
     console.error("Failed to send login code:", error);

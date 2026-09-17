@@ -16,7 +16,10 @@ export async function PATCH(request: Request) {
   }
 
   const name = (payload as { displayName?: unknown } | null)?.displayName;
-  const updated = updateDisplayName(user.id, typeof name === "string" ? name : "");
+  const updated = await updateDisplayName(
+    user.id,
+    typeof name === "string" ? name : "",
+  );
 
   if (!updated) {
     return Response.json(

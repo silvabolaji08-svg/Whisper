@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // does not block the suite).
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
 
+  // Neither survives being bundled into a Route Handler: PGlite ships a WASM
+  // build whose loader breaks, and pg resolves native bindings at runtime.
+  // Opting them out makes Next require() them normally.
+  serverExternalPackages: ["@electric-sql/pglite", "pg"],
+
   turbopack: {
     // Pin the workspace root, otherwise Turbopack walks up and finds an unrelated
     // package-lock.json in the home directory.

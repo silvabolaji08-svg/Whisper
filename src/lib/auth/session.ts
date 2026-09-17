@@ -19,7 +19,7 @@ export async function currentUser(): Promise<User | null> {
 
 /** Issues a session and attaches the cookie. Route Handlers only. */
 export async function startSession(userId: string): Promise<void> {
-  const { token } = createSession(userId);
+  const { token } = await createSession(userId);
   const store = await cookies();
 
   store.set(SESSION_COOKIE, token, {
@@ -35,6 +35,6 @@ export async function startSession(userId: string): Promise<void> {
 export async function endSession(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  if (token) destroySession(token);
+  if (token) await destroySession(token);
   store.delete(SESSION_COOKIE);
 }

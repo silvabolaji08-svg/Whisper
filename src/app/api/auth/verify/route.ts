@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   }
 
   const email = normalizeEmail(body.email);
-  const result = verifyCode(email, code);
+  const result = await verifyCode(email, code);
 
   if (!result.ok) {
     // 401 for a wrong guess, 410 once the code is unusable, so the client can

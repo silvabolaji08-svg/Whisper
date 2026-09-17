@@ -7,7 +7,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { query } from "../database";
+import { query, queryOne, toNumber, type Row } from "../database";
 import { cleanText, MAX_USERNAME_LENGTH } from "../types";
 import {
   authSecret,
@@ -27,18 +27,18 @@ export type User = {
   createdAt: number;
 };
 
-type UserRow = {
+type UserRow = Row & {
   id: string;
   email: string;
   display_name: string;
-  created_at: number;
+  created_at: string | number;
 };
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
   email: row.email,
   displayName: row.display_name,
-  createdAt: Number(row.created_at),
+  createdAt: toNumber(row.created_at),
 });
 
 /* -------------------------------------------------------------------------- */
@@ -73,53 +73,54 @@ function equals(a: string, b: string): boolean {
 /* Users                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export function findUserByEmail(email: string): User | null {
-  const row = query((handle) =>
-    handle
-      .prepare("SELECT id, email, display_name, created_at FROM users WHERE email = ?")
-      .get(email),
-  ) as UserRow | undefined;
+export async function findUserByEmail(email: string): Promise<User | null> {
+  const row = await queryOne<UserRow>(
+    "SELECT id, email, display_name, created_at FROM users WHERE email = $1",
+    [email],
+  );
   return row ? toUser(row) : null;
 }
 
-export function findUserById(id: string): User | null {
-  const row = query((handle) =>
-    handle
-      .prepare("SELECT id, email, display_name, created_at FROM users WHERE id = ?")
-      .get(id),
-  ) as UserRow | undefined;
+export async function findUserById(id: string): Promise<User | null> {
+  const row = await queryOne<UserRow>(
+    "SELECT id, email, display_name, created_at FROM users WHERE id = $1",
+    [id],
+  );
   return row ? toUser(row) : null;
 }
 
-/** Signup and login are the same flow, so the account is created on first proof. */
-export function findOrCreateUser(email: string): User {
-  const existing = findUserByEmail(email);
+/**
+ * Signup and login are the same flow, so the account is created on first proof.
+ *
+ * ON CONFLICT covers two codes for a new address being verified at once: the
+ * insert does nothing and the existing row is returned.
+ */
+export async function findOrCreateUser(email: string): Promise<User> {
+  const existing = await findUserByEmail(email);
   if (existing) return existing;
 
-  const user: User = {
-    id: randomUUID(),
-    email,
-    displayName: nameFromEmail(email),
-    createdAt: Date.now(),
-  };
-  query((handle) =>
-    handle
-      .prepare(
-        "INSERT INTO users (id, email, display_name, created_at) VALUES (?, ?, ?, ?)",
-      )
-      .run(user.id, user.email, user.displayName, user.createdAt),
+  await query(
+    `INSERT INTO users (id, email, display_name, created_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (email) DO NOTHING`,
+    [randomUUID(), email, nameFromEmail(email), Date.now()],
   );
-  return user;
+
+  const created = await findUserByEmail(email);
+  if (!created) throw new Error(`failed to create an account for ${email}`);
+  return created;
 }
 
-export function updateDisplayName(userId: string, name: string): User | null {
+export async function updateDisplayName(
+  userId: string,
+  name: string,
+): Promise<User | null> {
   const cleaned = cleanText(name, MAX_USERNAME_LENGTH);
   if (!cleaned) return null;
-  query((handle) =>
-    handle
-      .prepare("UPDATE users SET display_name = ? WHERE id = ?")
-      .run(cleaned, userId),
-  );
+  await query("UPDATE users SET display_name = $1 WHERE id = $2", [
+    cleaned,
+    userId,
+  ]);
   return findUserById(userId);
 }
 
@@ -130,42 +131,34 @@ export function updateDisplayName(userId: string, name: string): User | null {
 export type IssuedCode = { code: string; expiresAt: number };
 
 /** True when this address has asked for too many codes recently. */
-export function isRequestingTooOften(email: string): boolean {
-  const since = Date.now() - CODE_REQUEST_WINDOW_MS;
-  const row = query((handle) =>
-    handle
-      .prepare(
-        "SELECT COUNT(*) AS count FROM login_codes WHERE email = ? AND created_at > ?",
-      )
-      .get(email, since),
-  ) as { count: number } | undefined;
-  return Number(row?.count ?? 0) >= CODE_REQUESTS_PER_WINDOW;
+export async function isRequestingTooOften(email: string): Promise<boolean> {
+  const row = await queryOne<Row & { count: string | number }>(
+    "SELECT COUNT(*) AS count FROM login_codes WHERE email = $1 AND created_at > $2",
+    [email, Date.now() - CODE_REQUEST_WINDOW_MS],
+  );
+  return toNumber(row?.count ?? 0) >= CODE_REQUESTS_PER_WINDOW;
 }
 
 /**
  * Issues a fresh code, invalidating any outstanding one for the address so a
  * previously emailed code stops working the moment a new one is requested.
  */
-export function issueCode(email: string): IssuedCode {
+export async function issueCode(email: string): Promise<IssuedCode> {
   const now = Date.now();
   const expiresAt = now + CODE_TTL_MS;
 
   // randomInt is drawn from a CSPRNG, unlike Math.random.
   const code = String(randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, "0");
 
-  query((handle) => {
-    handle
-      .prepare(
-        "UPDATE login_codes SET consumed_at = ? WHERE email = ? AND consumed_at IS NULL",
-      )
-      .run(now, email);
-    handle
-      .prepare(
-        `INSERT INTO login_codes (id, email, code_hash, attempts, created_at, expires_at)
-         VALUES (?, ?, ?, 0, ?, ?)`,
-      )
-      .run(randomUUID(), email, hashCode(email, code), now, expiresAt);
-  });
+  await query(
+    "UPDATE login_codes SET consumed_at = $1 WHERE email = $2 AND consumed_at IS NULL",
+    [now, email],
+  );
+  await query(
+    `INSERT INTO login_codes (id, email, code_hash, attempts, created_at, expires_at)
+     VALUES ($1, $2, $3, 0, $4, $5)`,
+    [randomUUID(), email, hashCode(email, code), now, expiresAt],
+  );
 
   return { code, expiresAt };
 }
@@ -175,58 +168,52 @@ export type VerifyResult =
   | { ok: false; reason: "no-code" | "expired" | "too-many-attempts" | "mismatch" };
 
 /** Checks a submitted code and, on success, burns it and returns the account. */
-export function verifyCode(email: string, code: string): VerifyResult {
+export async function verifyCode(
+  email: string,
+  code: string,
+): Promise<VerifyResult> {
   const now = Date.now();
 
-  const row = query((handle) =>
-    handle
-      .prepare(
-        `SELECT id, code_hash, attempts, expires_at FROM login_codes
-         WHERE email = ? AND consumed_at IS NULL
-         ORDER BY created_at DESC LIMIT 1`,
-      )
-      .get(email),
-  ) as
-    | { id: string; code_hash: string; attempts: number; expires_at: number }
-    | undefined;
+  const row = await queryOne<
+    Row & {
+      id: string;
+      code_hash: string;
+      attempts: string | number;
+      expires_at: string | number;
+    }
+  >(
+    `SELECT id, code_hash, attempts, expires_at FROM login_codes
+     WHERE email = $1 AND consumed_at IS NULL
+     ORDER BY created_at DESC LIMIT 1`,
+    [email],
+  );
 
   if (!row) return { ok: false, reason: "no-code" };
 
-  if (Number(row.expires_at) < now) {
-    query((handle) =>
-      handle
-        .prepare("UPDATE login_codes SET consumed_at = ? WHERE id = ?")
-        .run(now, row.id),
-    );
+  const burn = () =>
+    query("UPDATE login_codes SET consumed_at = $1 WHERE id = $2", [now, row.id]);
+
+  if (toNumber(row.expires_at) < now) {
+    await burn();
     return { ok: false, reason: "expired" };
   }
 
-  if (Number(row.attempts) >= CODE_MAX_ATTEMPTS) {
-    query((handle) =>
-      handle
-        .prepare("UPDATE login_codes SET consumed_at = ? WHERE id = ?")
-        .run(now, row.id),
-    );
+  if (toNumber(row.attempts) >= CODE_MAX_ATTEMPTS) {
+    await burn();
     return { ok: false, reason: "too-many-attempts" };
   }
 
   if (!equals(row.code_hash, hashCode(email, code))) {
-    query((handle) =>
-      handle
-        .prepare("UPDATE login_codes SET attempts = attempts + 1 WHERE id = ?")
-        .run(row.id),
+    await query(
+      "UPDATE login_codes SET attempts = attempts + 1 WHERE id = $1",
+      [row.id],
     );
     return { ok: false, reason: "mismatch" };
   }
 
   // Correct: burn the code so it cannot be replayed.
-  query((handle) =>
-    handle
-      .prepare("UPDATE login_codes SET consumed_at = ? WHERE id = ?")
-      .run(now, row.id),
-  );
-
-  return { ok: true, user: findOrCreateUser(email) };
+  await burn();
+  return { ok: true, user: await findOrCreateUser(email) };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -236,61 +223,52 @@ export function verifyCode(email: string, code: string): VerifyResult {
 export type NewSession = { token: string; expiresAt: number };
 
 /** Returns the raw token; only its hash is persisted. */
-export function createSession(userId: string): NewSession {
+export async function createSession(userId: string): Promise<NewSession> {
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
   const expiresAt = now + SESSION_TTL_MS;
 
-  query((handle) =>
-    handle
-      .prepare(
-        "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-      )
-      .run(hashToken(token), userId, now, expiresAt),
+  await query(
+    `INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [hashToken(token), userId, now, expiresAt],
   );
 
   return { token, expiresAt };
 }
 
 /** Resolves a cookie token to its account, or null when missing or expired. */
-export function userForToken(token: string): User | null {
+export async function userForToken(token: string): Promise<User | null> {
   if (!token) return null;
 
-  const row = query((handle) =>
-    handle
-      .prepare(
-        `SELECT u.id, u.email, u.display_name, u.created_at, s.expires_at
-         FROM sessions AS s
-         JOIN users AS u ON u.id = s.user_id
-         WHERE s.token_hash = ?`,
-      )
-      .get(hashToken(token)),
-  ) as (UserRow & { expires_at: number }) | undefined;
+  const row = await queryOne<UserRow & { expires_at: string | number }>(
+    `SELECT u.id, u.email, u.display_name, u.created_at, s.expires_at
+     FROM sessions AS s
+     JOIN users AS u ON u.id = s.user_id
+     WHERE s.token_hash = $1`,
+    [hashToken(token)],
+  );
 
   if (!row) return null;
 
-  if (Number(row.expires_at) < Date.now()) {
-    destroySession(token);
+  if (toNumber(row.expires_at) < Date.now()) {
+    await destroySession(token);
     return null;
   }
 
   return toUser(row);
 }
 
-export function destroySession(token: string): void {
+export async function destroySession(token: string): Promise<void> {
   if (!token) return;
-  query((handle) =>
-    handle.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token)),
-  );
+  await query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
 }
 
 /** Housekeeping for expired sessions and spent codes. */
-export function purgeExpired(): void {
+export async function purgeExpired(): Promise<void> {
   const now = Date.now();
-  query((handle) => {
-    handle.prepare("DELETE FROM sessions WHERE expires_at < ?").run(now);
-    handle
-      .prepare("DELETE FROM login_codes WHERE expires_at < ?")
-      .run(now - CODE_TTL_MS);
-  });
+  await query("DELETE FROM sessions WHERE expires_at < $1", [now]);
+  await query("DELETE FROM login_codes WHERE expires_at < $1", [
+    now - CODE_TTL_MS,
+  ]);
 }

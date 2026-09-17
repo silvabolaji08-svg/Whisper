@@ -14,8 +14,10 @@
     "email:check": "node --env-file-if-exists=.env.local scripts/check-email.mjs"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "cross-env": "^10.1.0",
     "next": "16.3.5",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "socket.io": "^4.8.3",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.3",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

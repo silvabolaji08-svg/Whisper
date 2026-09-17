@@ -138,16 +138,23 @@ async function main(): Promise<void> {
    * passed through client code where a script could read it.
    */
   io.use((socket, nextFn) => {
-    const token = readCookie(socket.handshake.headers.cookie, SESSION_COOKIE);
-    const user = token ? userForToken(token) : null;
+    void (async () => {
+      try {
+        const token = readCookie(socket.handshake.headers.cookie, SESSION_COOKIE);
+        const user = token ? await userForToken(token) : null;
 
-    if (!user) {
-      nextFn(new Error("unauthorized"));
-      return;
-    }
+        if (!user) {
+          nextFn(new Error("unauthorized"));
+          return;
+        }
 
-    (socket as ChatSocket).data.user = user;
-    nextFn();
+        (socket as ChatSocket).data.user = user;
+        nextFn();
+      } catch (error) {
+        console.error("Session lookup failed:", error);
+        nextFn(new Error("unauthorized"));
+      }
+    })();
   });
 
   io.on("connection", (socket: ChatSocket) => {
@@ -179,12 +186,12 @@ async function main(): Promise<void> {
       socket.emit("joined", { room: normalizedRoom, username: user.displayName });
 
       // History is a convenience: failing to load it must not stop the join.
-      try {
-        socket.emit("history", recentMessages(normalizedRoom));
-      } catch (error) {
-        console.error("Failed to load history:", error);
-        socket.emit("rejected", "Earlier messages could not be loaded.");
-      }
+      recentMessages(normalizedRoom)
+        .then((history) => socket.emit("history", history))
+        .catch((error) => {
+          console.error("Failed to load history:", error);
+          socket.emit("rejected", "Earlier messages could not be loaded.");
+        });
 
       io.to(normalizedRoom).emit("presence", usersIn(io, normalizedRoom));
       broadcastTyping(io, normalizedRoom);
@@ -213,18 +220,17 @@ async function main(): Promise<void> {
         createdAt: Date.now(),
       };
 
-      try {
-        saveMessage(message);
-      } catch (error) {
-        console.error("Failed to persist message:", error);
-        socket.emit("rejected", "Message could not be saved.");
-        return;
-      }
-
-      // Sending stops the typing indicator immediately.
-      entry.typingUntil = 0;
-      io.to(entry.room).emit("message", message);
-      broadcastTyping(io, entry.room);
+      saveMessage(message)
+        .then(() => {
+          // Sending stops the typing indicator immediately.
+          entry.typingUntil = 0;
+          io.to(entry.room).emit("message", message);
+          broadcastTyping(io, entry.room);
+        })
+        .catch((error) => {
+          console.error("Failed to persist message:", error);
+          socket.emit("rejected", "Message could not be saved.");
+        });
     });
 
     socket.on("typing", ({ isTyping } = { isTyping: false }) => {
@@ -260,13 +266,15 @@ async function main(): Promise<void> {
 
   // Only the newest messages per room are ever served; the rest are dead weight.
   const pruner = setInterval(() => {
-    try {
-      const removed = pruneMessages();
-      if (removed > 0) console.log(`Pruned ${removed} old message(s).`);
-      purgeExpired();
-    } catch (error) {
-      console.error("Housekeeping failed:", error);
-    }
+    void (async () => {
+      try {
+        const removed = await pruneMessages();
+        if (removed > 0) console.log(`Pruned ${removed} old message(s).`);
+        await purgeExpired();
+      } catch (error) {
+        console.error("Housekeeping failed:", error);
+      }
+    })();
   }, PRUNE_INTERVAL_MS);
   pruner.unref();
 
@@ -289,8 +297,7 @@ async function main(): Promise<void> {
     clearInterval(pruner);
 
     const done = () => {
-      closeDatabase();
-      process.exit(0);
+      void closeDatabase().finally(() => process.exit(0));
     };
 
     io.close(() => {
