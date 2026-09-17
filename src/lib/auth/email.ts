@@ -19,7 +19,7 @@ const minutes = Math.round(CODE_TTL_MS / 60_000);
 
 function textBody(code: string): string {
   return [
-    `Your Realtime Chat sign-in code is ${code}`,
+    `Your Whisper sign-in code is ${code}`,
     "",
     `The code expires in ${minutes} minutes and can only be used once.`,
     "If you did not request it, you can ignore this email.",
@@ -32,7 +32,7 @@ function htmlBody(code: string): string {
     <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#0f172a">
       <h1 style="margin:0 0 8px;font-size:20px">Your sign-in code</h1>
       <p style="margin:0 0 24px;color:#475569;font-size:14px;line-height:1.6">
-        Enter this code to sign in to Realtime Chat.
+        Enter this code to sign in to Whisper.
       </p>
       <div style="font-size:32px;font-weight:700;letter-spacing:8px;background:#f1f5fd;border-radius:12px;padding:20px;text-align:center">
         ${code}
@@ -50,7 +50,7 @@ export async function sendLoginCode(
   code: string,
 ): Promise<DeliveryResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM ?? "Realtime Chat <onboarding@resend.dev>";
+  const from = process.env.EMAIL_FROM ?? "Whisper <onboarding@resend.dev>";
 
   // forceConsoleCodes wins over a configured key on purpose: the suite reads
   // codes from stdout, and Next loads .env.local automatically, so a developer
@@ -71,7 +71,7 @@ export async function sendLoginCode(
     body: JSON.stringify({
       from,
       to: [email],
-      subject: `${code} is your Realtime Chat code`,
+      subject: `${code} is your Whisper code`,
       text: textBody(code),
       html: htmlBody(code),
     }),

@@ -159,6 +159,7 @@
 
   --font-sans: var(--font-open-sans), system-ui, sans-serif;
   --font-display: var(--font-poppins), var(--font-open-sans), system-ui, sans-serif;
+  --font-script: var(--font-caveat), "Segoe Script", cursive;
 
   --radius-token: var(--radius);
 }
@@ -307,6 +308,81 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Wordmark
+   --------------------------------------------------------------------------- */
+
+.wordmark {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-caveat), "Segoe Script", cursive;
+  font-weight: 700;
+  /* Script faces sit small for their point size and need room for descenders. */
+  line-height: 1.15;
+  padding-inline: 0.06em;
+  white-space: nowrap;
+}
+
+.wordmark-ink {
+  display: inline-block;
+  background: var(--bubble-own);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  /* Revealed left to right, as if being written. */
+  animation: write-on 1100ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+/* The nib travels with the leading edge, then lifts off the page. */
+.wordmark-nib {
+  position: absolute;
+  top: 55%;
+  left: 0;
+  width: 0.09em;
+  height: 0.09em;
+  border-radius: 9999px;
+  background: var(--primary);
+  opacity: 0;
+  animation: nib-travel 1100ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes write-on {
+  from {
+    clip-path: inset(0 100% -20% 0);
+  }
+  to {
+    clip-path: inset(0 -5% -20% 0);
+  }
+}
+
+@keyframes nib-travel {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  88% {
+    opacity: 0.9;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+/* Reduced motion gets the finished word, with no sweep and no nib. */
+@media (prefers-reduced-motion: reduce) {
+  .wordmark-ink {
+    animation: none;
+    clip-path: none;
+  }
+  .wordmark-nib {
+    display: none;
   }
 }
 

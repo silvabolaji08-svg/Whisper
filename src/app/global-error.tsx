@@ -40,7 +40,7 @@ export default function GlobalError({
           lineHeight: 1.6,
         }}
       >
-        <title>Something went wrong · Realtime Chat</title>
+        <title>Something went wrong · Whisper</title>
         <main style={{ maxWidth: "26rem", textAlign: "center" }}>
           <h1
             style={{

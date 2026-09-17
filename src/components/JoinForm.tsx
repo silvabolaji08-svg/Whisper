@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import ThemeToggle from "@/components/ThemeToggle";
+import Wordmark from "@/components/Wordmark";
 import {
   AlertIcon,
   CheckIcon,
@@ -128,8 +129,8 @@ export default function JoinForm({
             >
               <MessageIcon size={26} />
             </span>
-            <h1 className="font-display text-3xl font-semibold sm:text-4xl">
-              Realtime Chat
+            <h1 className="text-5xl sm:text-6xl">
+              <Wordmark />
             </h1>
             <p className="mt-2.5 max-w-sm text-sm leading-relaxed text-fg-muted">
               Pick a room. Anyone who opens the same room joins the conversation.

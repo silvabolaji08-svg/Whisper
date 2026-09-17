@@ -1,11 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Open_Sans, Poppins } from "next/font/google";
+import { Caveat, Open_Sans, Poppins } from "next/font/google";
 
 import { THEME_INIT_SCRIPT } from "@/lib/useTheme";
 import "./globals.css";
 
 const openSans = Open_Sans({
   variable: "--font-open-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// The wordmark only. A script face is hard to read at interface sizes, so it
+// carries the brand rather than the UI.
+const caveat = Caveat({
+  variable: "--font-caveat",
+  weight: ["500", "700"],
   subsets: ["latin"],
   display: "swap",
 });
@@ -18,8 +27,8 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Realtime Chat",
-  description: "A realtime chat app built with Next.js and Socket.IO.",
+  title: "Whisper",
+  description: "A realtime chat app. Rooms you can share with a link.",
 };
 
 export const viewport: Viewport = {
@@ -36,7 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       // The theme script sets data-theme before React hydrates.
       suppressHydrationWarning
-      className={`${openSans.variable} ${poppins.variable} h-full`}
+      className={`${openSans.variable} ${poppins.variable} ${caveat.variable} h-full`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />

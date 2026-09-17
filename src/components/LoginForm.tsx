@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { AlertIcon, ArrowLeftIcon, MessageIcon } from "@/components/icons";
+import Wordmark from "@/components/Wordmark";
 
 const CODE_LENGTH = 6;
 /** Wait before "Resend code" becomes available, matching the server's patience. */
@@ -121,7 +122,10 @@ export default function LoginForm({ next }: { next: string }) {
           >
             <MessageIcon size={26} />
           </span>
-          <h1 className="font-display text-3xl font-semibold">
+          <p className="mb-2 text-5xl">
+            <Wordmark />
+          </p>
+          <h1 className="font-display text-xl font-semibold">
             {step === "email" ? "Sign in" : "Check your email"}
           </h1>
           <p className="mt-2.5 max-w-sm text-sm leading-relaxed text-fg-muted">

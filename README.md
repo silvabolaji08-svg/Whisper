@@ -1,4 +1,4 @@
-# Realtime Chat
+# Whisper
 
 A multi-room realtime chat app built with Next.js (App Router), Socket.IO, and SQLite.
 
