@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { io } from "socket.io-client";
+import WebSocket from "ws";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOCKET_PATH = "/api/socket";
@@ -108,24 +108,77 @@ async function signIn(email) {
 /* Socket helpers                                                              */
 /* -------------------------------------------------------------------------- */
 
-/** A connected client that records every server event for later assertions. */
+/**
+ * Normalizes a server frame to the payload the assertions care about, so each
+ * test reads `last(socket, "presence")` rather than unpacking a frame.
+ */
+function payloadOf(frame) {
+  switch (frame.t) {
+    case "joined":
+      return { room: frame.room, username: frame.username };
+    case "history":
+      return frame.messages;
+    case "message":
+      return frame.message;
+    case "presence":
+    case "typing":
+      return frame.users;
+    case "rejected":
+      return frame.reason;
+    default:
+      return frame;
+  }
+}
+
+/** A connected client that records every server frame for later assertions. */
 async function connect(cookie) {
-  const socket = io(baseUrl, {
-    path: SOCKET_PATH,
-    transports: ["websocket"],
-    extraHeaders: cookie ? { Cookie: cookie } : {},
-    reconnection: false,
+  const socket = new WebSocket(`${baseUrl.replace(/^http/, "ws")}${SOCKET_PATH}`, {
+    headers: cookie ? { Cookie: cookie } : {},
   });
   socket.events = [];
-  for (const name of ["history", "message", "presence", "typing", "joined", "rejected"]) {
-    socket.on(name, (payload) => socket.events.push({ name, payload }));
-  }
-  await new Promise((resolve, reject) => {
-    socket.once("connect", resolve);
-    socket.once("connect_error", reject);
+
+  socket.on("message", (raw) => {
+    try {
+      const frame = JSON.parse(raw.toString());
+      socket.events.push({ name: frame.t, payload: payloadOf(frame) });
+    } catch {
+      // A malformed frame would be a bug, but the assertions will catch it.
+    }
   });
+
+  // Resolve on "ready" rather than "open": the upgrade is accepted before the
+  // session is resolved, so an open socket is not yet an authenticated one.
+  // An unauthenticated connection is closed with 4401.
+  await new Promise((resolve, reject) => {
+    const onFrame = (raw) => {
+      try {
+        if (JSON.parse(raw.toString()).t === "ready") {
+          socket.off("message", onFrame);
+          resolve();
+        }
+      } catch {
+        // Ignored; a malformed frame is not a ready frame.
+      }
+    };
+    socket.on("message", onFrame);
+    socket.once("error", reject);
+    socket.once("close", (code) =>
+      reject(new Error(code === 4401 ? "unauthorized" : `closed ${code}`)),
+    );
+    socket.once("unexpected-response", (_request, response) =>
+      reject(new Error(`HTTP ${response.statusCode}`)),
+    );
+  });
+
+  // The rejection listener above must not outlive the handshake, or a normal
+  // close at the end of a test becomes an unhandled rejection.
+  socket.removeAllListeners("close");
+  socket.removeAllListeners("error");
+  socket.on("error", () => {});
   return socket;
 }
+
+const send = (socket, frame) => socket.send(JSON.stringify(frame));
 
 const last = (socket, name) =>
   [...socket.events].reverse().find((entry) => entry.name === name)?.payload;
@@ -133,7 +186,7 @@ const countOf = (socket, name) =>
   socket.events.filter((entry) => entry.name === name).length;
 
 async function join(socket, room) {
-  socket.emit("join", { room });
+  send(socket, { t: "join", room });
   await wait(SETTLE_MS);
 }
 
@@ -336,20 +389,20 @@ describe("joining a room", () => {
     assert.deepEqual(last(socket, "history"), []);
     assert.equal(last(socket, "presence").length, 1);
 
-    socket.disconnect();
+    socket.close();
   });
 
   it("takes the display name from the account, not the client", async () => {
     const socket = await connect((await signIn("ada.lovelace@example.com")).cookie);
 
     // A username in the payload must be ignored entirely.
-    socket.emit("join", { room: "identity", username: "Impersonator" });
+    send(socket, { t: "join", room: "identity", username: "Impersonator" });
     await wait(SETTLE_MS);
 
     assert.equal(last(socket, "joined").username, "ada lovelace");
     assert.deepEqual(last(socket, "presence"), ["ada lovelace"]);
 
-    socket.disconnect();
+    socket.close();
   });
 
   it("normalizes the room name", async () => {
@@ -357,7 +410,7 @@ describe("joining a room", () => {
     await join(socket, "  Mixed Case Room!  ");
 
     assert.equal(last(socket, "joined").room, "mixed-case-room");
-    socket.disconnect();
+    socket.close();
   });
 
   it("rejects an unusable room", async () => {
@@ -365,7 +418,7 @@ describe("joining a room", () => {
     await join(socket, "!!!");
 
     assert.match(last(socket, "rejected"), /room name is not valid/i);
-    socket.disconnect();
+    socket.close();
   });
 
   it("reports presence to everyone in the room", async () => {
@@ -375,11 +428,11 @@ describe("joining a room", () => {
     assert.deepEqual(last(alice, "presence"), ["alice p", "bob p"]);
     assert.deepEqual(last(bob, "presence"), ["alice p", "bob p"]);
 
-    bob.disconnect();
+    bob.close();
     await wait(SETTLE_MS);
     assert.deepEqual(last(alice, "presence"), ["alice p"]);
 
-    alice.disconnect();
+    alice.close();
   });
 });
 
@@ -388,7 +441,7 @@ describe("messaging", () => {
     const alice = await member("alice.m@example.com", "talk");
     const bob = await member("bob.m@example.com", "talk");
 
-    alice.emit("message", { text: "hello bob" });
+    send(alice, { t: "message", text: "hello bob" });
     await wait(SETTLE_MS);
 
     for (const [who, socket] of [
@@ -403,49 +456,49 @@ describe("messaging", () => {
       assert.equal(typeof message.createdAt, "number");
     }
 
-    alice.disconnect();
-    bob.disconnect();
+    alice.close();
+    bob.close();
   });
 
   it("refuses messages before a join", async () => {
     const socket = await member("early@example.com");
-    socket.emit("message", { text: "too early" });
+    send(socket, { t: "message", text: "too early" });
     await wait(SETTLE_MS);
 
     assert.match(last(socket, "rejected"), /join a room/i);
     assert.equal(countOf(socket, "message"), 0);
 
-    socket.disconnect();
+    socket.close();
   });
 
   it("drops blank messages without rejecting the sender", async () => {
     const socket = await member("blank@example.com", "blank");
 
-    socket.emit("message", { text: "   " });
+    send(socket, { t: "message", text: "   " });
     await wait(SETTLE_MS);
 
     assert.equal(countOf(socket, "message"), 0);
-    socket.disconnect();
+    socket.close();
   });
 
   it("does not leak messages into another room", async () => {
     const here = await member("here@example.com", "room-a");
     const elsewhere = await member("elsewhere@example.com", "room-b");
 
-    here.emit("message", { text: "only for room-a" });
+    send(here, { t: "message", text: "only for room-a" });
     await wait(SETTLE_MS);
 
     assert.equal(countOf(here, "message"), 1);
     assert.equal(countOf(elsewhere, "message"), 0);
 
-    here.disconnect();
-    elsewhere.disconnect();
+    here.close();
+    elsewhere.close();
   });
 
   it("rate limits a sender past the burst allowance", async () => {
     const socket = await member("spammer@example.com", "spam");
 
-    for (let i = 0; i < 20; i += 1) socket.emit("message", { text: `spam ${i}` });
+    for (let i = 0; i < 20; i += 1) send(socket, { t: "message", text: `spam ${i}` });
     await wait(1000);
 
     assert.ok(countOf(socket, "rejected") > 0, "expected a rate-limit rejection");
@@ -454,7 +507,7 @@ describe("messaging", () => {
       `expected at most 15 delivered, got ${countOf(socket, "message")}`,
     );
 
-    socket.disconnect();
+    socket.close();
   });
 
   it("keeps the rate limit across a reconnect", async () => {
@@ -463,17 +516,17 @@ describe("messaging", () => {
 
     const first = await connect(cookie);
     await join(first, "spam2");
-    for (let i = 0; i < 20; i += 1) first.emit("message", { text: `burst ${i}` });
+    for (let i = 0; i < 20; i += 1) send(first, { t: "message", text: `burst ${i}` });
     await wait(1000);
     const deliveredFirst = countOf(first, "message");
-    first.disconnect();
+    first.close();
     await wait(SETTLE_MS);
 
     // Reconnecting must not hand out a fresh allowance: the limit follows the
     // account, not the socket.
     const second = await connect(cookie);
     await join(second, "spam2");
-    for (let i = 0; i < 10; i += 1) second.emit("message", { text: `after ${i}` });
+    for (let i = 0; i < 10; i += 1) send(second, { t: "message", text: `after ${i}` });
     await wait(1000);
 
     const total = deliveredFirst + countOf(second, "message");
@@ -482,7 +535,7 @@ describe("messaging", () => {
       `reconnect reset the limiter: ${total} messages delivered in one window`,
     );
 
-    second.disconnect();
+    second.close();
   });
 });
 
@@ -491,45 +544,45 @@ describe("typing indicators", () => {
     const alice = await member("alice.t@example.com", "typing-room");
     const bob = await member("bob.t@example.com", "typing-room");
 
-    bob.emit("typing", { isTyping: true });
+    send(bob, { t: "typing", isTyping: true });
     await wait(SETTLE_MS);
 
     assert.deepEqual(last(alice, "typing"), ["bob t"]);
     assert.deepEqual(last(bob, "typing"), []);
 
-    bob.emit("typing", { isTyping: false });
+    send(bob, { t: "typing", isTyping: false });
     await wait(SETTLE_MS);
     assert.deepEqual(last(alice, "typing"), []);
 
-    alice.disconnect();
-    bob.disconnect();
+    alice.close();
+    bob.close();
   });
 
   it("clears the indicator when the typist sends", async () => {
     const alice = await member("alice.s@example.com", "typing-send");
     const bob = await member("bob.s@example.com", "typing-send");
 
-    bob.emit("typing", { isTyping: true });
+    send(bob, { t: "typing", isTyping: true });
     await wait(SETTLE_MS);
     assert.deepEqual(last(alice, "typing"), ["bob s"]);
 
-    bob.emit("message", { text: "done typing" });
+    send(bob, { t: "message", text: "done typing" });
     await wait(SETTLE_MS);
     assert.deepEqual(last(alice, "typing"), []);
 
-    alice.disconnect();
-    bob.disconnect();
+    alice.close();
+    bob.close();
   });
 });
 
 describe("persisted history", () => {
   it("replays earlier messages to someone who joins later", async () => {
     const early = await member("early.h@example.com", "history-room");
-    early.emit("message", { text: "first" });
+    send(early, { t: "message", text: "first" });
     await wait(200);
-    early.emit("message", { text: "second" });
+    send(early, { t: "message", text: "second" });
     await wait(SETTLE_MS);
-    early.disconnect();
+    early.close();
     await wait(SETTLE_MS);
 
     const late = await member("late.h@example.com", "history-room");
@@ -540,7 +593,7 @@ describe("persisted history", () => {
       "history arrives oldest-first",
     );
 
-    late.disconnect();
+    late.close();
   });
 });
 
@@ -559,7 +612,7 @@ describe("the profile endpoint", () => {
     await join(socket, "renamed");
     assert.equal(last(socket, "joined").username, "Grace H");
 
-    socket.disconnect();
+    socket.close();
   });
 
   it("refuses an empty name", async () => {

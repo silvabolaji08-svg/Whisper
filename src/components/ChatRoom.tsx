@@ -65,7 +65,8 @@ function dayLabel(timestamp: number): string {
 const STATUS_META: Record<ConnectionStatus, { label: string; color: string }> = {
   connecting: { label: "Connecting", color: "var(--away)" },
   online: { label: "Live", color: "var(--online)" },
-  offline: { label: "Offline", color: "var(--danger)" },
+  // Hosting closes idle sockets on a cycle, so this is usually momentary.
+  offline: { label: "Reconnecting", color: "var(--away)" },
 };
 
 /** Overlapping avatars for the first few people present, with a +N overflow chip. */
@@ -419,9 +420,13 @@ export default function ChatRoom({
 
           <button
             type="submit"
-            disabled={!draft.trim() || status !== "online"}
+            disabled={!draft.trim()}
             aria-label="Send message"
-            title={status === "online" ? "Send message" : "Not connected"}
+            title={
+              status === "online"
+                ? "Send message"
+                : "Reconnecting — your message will send once connected"
+            }
             className="grid size-12 shrink-0 cursor-pointer place-items-center rounded-2xl surface-brand shadow-(--shadow-md) transition-[filter,transform,opacity] duration-150 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
           >
             <SendIcon />

@@ -6,24 +6,6 @@ export type ChatMessage = {
   createdAt: number;
 };
 
-/** Events the server pushes down to a connected client. */
-export interface ServerToClientEvents {
-  history: (messages: ChatMessage[]) => void;
-  message: (message: ChatMessage) => void;
-  presence: (users: string[]) => void;
-  typing: (users: string[]) => void;
-  joined: (payload: { room: string; username: string }) => void;
-  rejected: (reason: string) => void;
-}
-
-/** Events a client sends up to the server. */
-export interface ClientToServerEvents {
-  // No username: the server takes identity from the session, never the client.
-  join: (payload: { room: string }) => void;
-  message: (payload: { text: string }) => void;
-  typing: (payload: { isTyping: boolean }) => void;
-}
-
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_USERNAME_LENGTH = 24;
 export const MAX_ROOM_LENGTH = 32;
